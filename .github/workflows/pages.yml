@@ -1,0 +1,58 @@
+name: Publish Mem-TTT
+
+'on':
+  workflow_dispatch:
+    inputs:
+      release_tag:
+        description: Published release containing Mem-TTT_Project_Page.zip
+        required: true
+        default: site-v1
+        type: string
+
+concurrency:
+  group: github-pages
+  cancel-in-progress: false
+
+jobs:
+  prepare:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Download the published website ZIP
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ inputs.release_tag }}
+        run: |
+          draft=$(gh release view --repo "$GITHUB_REPOSITORY" --json isDraft --jq .isDraft -- "$RELEASE_TAG")
+          if [[ "$draft" != false ]]; then
+            echo "Publish the release before deploying its website." >&2
+            exit 1
+          fi
+          gh release download --repo "$GITHUB_REPOSITORY" --dir "$RUNNER_TEMP" \
+            --pattern Mem-TTT_Project_Page.zip -- "$RELEASE_TAG"
+
+      - name: Extract the site
+        run: |
+          unzip -q "$RUNNER_TEMP/Mem-TTT_Project_Page.zip" -d _site
+          test -s _site/index.html
+          test -s _site/method.html
+          test -s _site/assets/mem-ttt-film.mp4
+          test -s _site/assets/mem-ttt-film-en.mp4
+
+      - uses: actions/upload-pages-artifact@v4
+        with:
+          path: _site
+
+  deploy:
+    needs: prepare
+    runs-on: ubuntu-latest
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4
